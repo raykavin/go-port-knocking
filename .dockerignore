@@ -1,0 +1,6 @@
+/.docker
+/.vscode
+/configs
+/scripts/sql
+/deploy
+__debug_bin*

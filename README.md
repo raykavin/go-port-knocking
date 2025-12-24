@@ -24,7 +24,7 @@ This template is meant to support your workflow, not enforce a specific structur
 
 1. Clone this repository:
    ```bash
-   git clone <repo-url>
+   git clone https://github.com/raykavin/devcontainer-go.git
    ```
 2. Open the project in **VS Code**
 3. When prompted, select **“Reopen in Container”**

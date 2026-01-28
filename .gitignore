@@ -1,7 +1,0 @@
-/.docker
-/.vscode
-/configs/production.yml
-/configs/debug.yml
-/scripts/sql
-/deploy
-__debug_bin*

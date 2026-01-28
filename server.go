@@ -8,13 +8,24 @@ import (
 	"time"
 )
 
+type KnockStep struct {
+	Port  int
+	Count int
+}
+
 var (
-	knockSequence = []int{7001, 8002, 9003}
-	timeout       = 5 * time.Second
+	knockSequence = []KnockStep{
+		{Port: 7001, Count: 3},
+		{Port: 8002, Count: 1},
+		{Port: 9003, Count: 2},
+	}
+
+	timeout = 1 * time.Second // Max delay for next knocking
 )
 
 type ClientState struct {
-	Index     int
+	StepIndex int
+	HitCount  int
 	LastKnock time.Time
 }
 
@@ -27,9 +38,9 @@ func handleKnock(port int) {
 	addr := fmt.Sprintf(":%d", port)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		log.Fatalf("Error listening %d: %v", port, err)
+		log.Fatalf("Error listening on port %d: %v", port, err)
 	}
-	log.Printf("Listening knock on port: %d", port)
+	log.Printf("Listening for knock on port %d", port)
 
 	for {
 		conn, err := ln.Accept()
@@ -37,9 +48,14 @@ func handleKnock(port int) {
 			continue
 		}
 
-		ip, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
-
-		if err = conn.Close(); err != nil {
+		ip, _, err := net.SplitHostPort(conn.RemoteAddr().String())
+		if err != nil {
+			if err := conn.Close(); err != nil {
+				panic(err)
+			}
+			continue
+		}
+		if err := conn.Close(); err != nil {
 			panic(err)
 		}
 
@@ -52,32 +68,68 @@ func processKnock(ip string, port int) {
 	defer mutex.Unlock()
 
 	state, ok := clients[ip]
+
+	// New client or timeout: reset
 	if !ok || time.Since(state.LastKnock) > timeout {
 		state = &ClientState{}
 		clients[ip] = state
 	}
 
-	expectedPort := knockSequence[state.Index]
-	if port == expectedPort {
-		state.Index++
+	// Extra security
+	if state.StepIndex >= len(knockSequence) {
+		delete(clients, ip)
+		return
+	}
+
+	step := knockSequence[state.StepIndex]
+
+	if port == step.Port {
+		state.HitCount++
 		state.LastKnock = time.Now()
 
-		if state.Index == len(knockSequence) {
-			log.Printf("Knock sequency ok for IP: %s | ACCESS GRANTED", ip)
-			delete(clients, ip)
+		log.Printf(
+			"Knock OK %s | port %d (%d/%d) step %d/%d",
+			ip,
+			port,
+			state.HitCount,
+			step.Count,
+			state.StepIndex+1,
+			len(knockSequence),
+		)
 
-			fmt.Println("ok...")
+		// Knocking complete for this step
+		if state.HitCount == step.Count {
+			state.StepIndex++
+			state.HitCount = 0
+
+			// Complete sequency
+			if state.StepIndex == len(knockSequence) {
+				log.Printf("ACCESS GRANTED for IP %s", ip)
+				delete(clients, ip)
+
+				fmt.Println("OK...")
+			}
 		}
 	} else {
-		log.Printf("Invalid knock sequency of %s (port %d)", ip, port)
+		log.Printf("Invalid knock from %s (port %d, expected %d)",
+			ip,
+			port,
+			step.Port)
 		delete(clients, ip)
 	}
 }
 
 func server() {
-	for _, port := range knockSequence {
+	unPorts := make(map[int]struct{})
+
+	for _, step := range knockSequence {
+		unPorts[step.Port] = struct{}{}
+	}
+
+	for port := range unPorts {
 		go handleKnock(port)
 	}
 
+	log.Println("Port knocking server running...")
 	select {}
 }
